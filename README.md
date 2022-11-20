@@ -1,3 +1,3 @@
 # winter_school_sdc
 
-Hello world!
+Hello world, you are great!
