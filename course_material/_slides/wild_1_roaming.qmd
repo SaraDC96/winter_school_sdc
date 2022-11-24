@@ -1,0 +1,267 @@
+---
+# title: Roaming data
+format:
+  revealjs:
+    theme: FACE-IT_pres.scss
+    self-contained: true
+    transition: slide
+editor: source
+scrollable: true
+---
+
+# Roaming data {background-color="#008980" style="text-align: center"}
+
+*Robert Schlegel*
+
+```{r tidy-3-opts, echo=FALSE}
+knitr::opts_chunk$set(
+  warning = FALSE, 
+  message = FALSE,
+  echo = TRUE
+)
+setwd("../")
+```
+
+## Problem
+
+-   There are a lot of data out there, what is accessible?
+-   Are there tools to help us with this?
+-   What do we do with the data once we have them?
+
+## Solution
+
+-   Many useful resources are easy to get via **R**
+-   We will look at some key packages
+-   As well as the steps needed to process the data
+
+## Setup
+
+-   As usual, we always start with `library(tidyverse)`
+-   We will however look at many new packages
+-   These are organised here into similar groups
+
+```{r}
+library(tidyverse) # All-in-one
+```
+
+## Data layers
+
+-   These packages help us to download pre-processed data layers
+
+```{r}
+library(oceanexplorer) # Access World Ocean Atlas (WOA)
+# See: # https://cran.r-project.org/web/packages/oceanexplorer/vignettes/oceanexplorer.html
+
+library(sdmpredictors) # Layers used in modelling
+# See: https://bio-oracle.org/code.php
+```
+
+## Datasets
+
+-   These packages help us to download specific datasets
+
+```{r}
+library(rgbif) # Access anything on GBIF
+# See: https://data-blog.gbif.org/post/gbif-api-beginners-guide/
+
+library(pangaear) # Access anything on PANGAEA
+# See: https://docs.ropensci.org/pangaear/
+```
+
+## Databases
+
+-   These packages help us query entire databases
+
+```{r}
+library(rerddap) # For accessing ERDDAP databases
+```
+
+## rOpenSci
+
+The [rOpenSci](https://ropensci.org/) project is a massive international effort to create free open source tools to access, analyse, and visualise a very wide range of scientific data. Thanks to this project there are more and more new packages every month that allow us to more easily access the datasets etc. we may be interested in. Many of the packages we will look at today come from this source. It also contains many more useful packages not shown in these slides. Use the search bar on this page to find what you are looking for.
+
+## WOA
+
+-   The [World Ocean Atlas (WOA)](https://www.ncei.noaa.gov/products/world-ocean-atlas) contains many pre-processed phyical/chemical ocean layers
+-   These take several minutes to download
+-   Not easy to use with **`ggplot2`**
+
+```{r, eval=FALSE}
+# The library containing these functions
+library(oceanexplorer)
+
+# Get data
+winter_temp <- get_NOAA(var = "temperature", spat_res = 1, av_period = "winter")
+
+# Plot
+plot_NOAA(WA_temp)
+```
+
+## Bio-oracle
+
+-   Faster than WOA and more variables
+-   Will time out on a slow connection
+-   Downloaded data work well with **`ggplot2`**
+
+```{r, eval=FALSE}
+# The library containing these functions
+library(sdmpredictors)
+
+# Explore datasets in the package
+list_datasets()
+
+# Explore layers in a dataset
+BO_layers <- list_layers(datasets = "Bio-ORACLE")
+
+# Average surface temperature
+surface_temp <- load_layers("BO22_tempmean_ss")
+```
+
+## GBIF
+
+-   Note that for full functionality you will need a free [GBIF account](https://www.gbif.org/)
+-   Otherwise this is very easy to use
+
+```{r}
+# The library containing these functions
+library(rgbif)
+
+# Download occurrence data
+Emax <- occ_search(scientificName = "Ecklonia maxima")
+```
+
+## GBIF
+
+-   Create a bar plot of the count of data points by county
+
+```{r}
+#| output-location: fragment
+
+Emax$data %>% 
+  group_by(county) %>% 
+  summarise(count = n(), .groups = "drop") %>% 
+  ggplot(aes(x = county, y = count)) +
+  geom_bar(aes(fill = county), stat = "identity", show.legend = F)
+```
+
+## GBIF
+
+-   Plot the occurrence points on a map
+
+```{r}
+#| output-location: fragment
+
+Emax$data %>% 
+  ggplot() +
+  borders() +
+  geom_point(aes(x = as.numeric(Emax$data$decimalLongitude), 
+                 y = as.numeric(Emax$data$decimalLatitude),
+                 colour = country)) +
+  coord_quickmap(xlim = c(-1, 29), ylim = c(-36, 1))
+```
+
+## PANGAEA
+
+-   [PANGAEA](https://pangaea.de/) hosts a massive number of useful datasets
+-   Either find a dataset you like on the website, or search for it using R
+
+```{r}
+# The library containing these functions
+library(pangaear)
+
+# Search for PAR data within Kongsfjorden
+  # NB: Bounding box is: minlon, minlat, maxlon, maxlat
+search_res <- pg_search(query = "PAR", bbox = c(11, 78, 13, 80), count = 10)
+head(search_res)
+```
+
+## PANGAEA
+
+-   Once you have a DOI, easy to download and use in R
+
+```{r}
+#| output-location: fragment
+
+# Download
+kong_PAR_dl <- pg_data(doi = search_res$doi[1])
+
+# Prep
+kong_PAR <- kong_PAR_dl[[1]]$data %>% 
+  mutate(t = as.POSIXct(str_replace(`Date/Time`, "T", " ")))
+
+# Plot
+kong_PAR %>% 
+  filter(t < "2012-07-31 00:00:00") %>% 
+  ggplot(aes(x = t, y = `PAR [µmol/m**2/s]`)) +
+  geom_line(aes(colour = as.factor(`Depth water [m]`))) +
+  facet_wrap(~Comment, ncol = 1) + 
+  labs(x = NULL, colour = "Depth [m]", 
+       title = "PAR data from Kongsfjorden for July, 2012",
+       subtitle = "Shallower values taken both above and below kelp canopy",
+       caption = str_wrap(kong_PAR_dl[[1]]$citation, 100))
+```
+
+
+## ERDDAP
+
+This is not one single source, rather this is a sort of technology that has been developed to allow us to subet data from online databases. For our applications, this generally means we are extracting spatial subsets of physical/chemical data from gridded datasets. The following slides provide some examples of how this works.
+
+## NOAA
+
+-   Visit the [NOAA ERDDAP](https://coastwatch.pfeg.noaa.gov/erddap/) page to see the datasets
+-   This takes several minutes for a week of global data
+
+```{r, eval=FALSE}
+# First we start with the dataset name
+OISST_dl <- griddap(datasetx = "ncdcOisst21Agg_LonPM180",
+                    # Then we provide the site where the data are
+                    url = "https://coastwatch.pfeg.noaa.gov/erddap/", 
+                    # The range of dates we want
+                    time = c("2020-12-25", "2020-12-31"),
+                    # The depth range
+                    zlev = c(0, 0),
+                    # lon/lat are taken from the centre of the pixel
+                    longitude = c(-179.875, 179.875),
+                    latitude = c(-89.875, 89.875),
+                    # Then list the data layer you want
+                    # These can be found on the dataset website
+                    fields = "sst")
+```
+
+## NOAA
+
+-   The data need just a bit of processing
+
+```{r, eval=FALSE}
+OISST_2020 <- OISST_dl$data %>% 
+    mutate(time = as.Date(stringr::str_replace(time, "T12:00:00Z", ""))) %>%
+    dplyr::rename(t = time, temp = sst, lon = longitude, lat = latitude) %>%
+    select(lon, lat, t, temp) %>%
+    na.omit()
+```
+```{r, eval=FALSE, echo=FALSE}
+save(OISST_2020, file = "course_material/data/OISST_2020.RData")
+```
+
+## NOAA
+
+-   Then they can be visualised like normal
+
+```{r, echo=FALSE}
+if(!exists("OISST_2020")) load("../data/OISST_2020.RData")
+```
+
+```{r}
+#| output-location: fragment
+
+# Filter for quicker plotting
+OISST_2020 %>% 
+  filter(lon > 6, lon < 32, lat > 76, lat < 81,
+         t != "2020-12-28") %>% 
+  ggplot() + borders() +
+  geom_raster(aes(x = lon, y = lat, fill = temp)) +
+  scale_fill_viridis_c() +
+  coord_quickmap(xlim = c(6, 32), ylim = c(76, 81), expand = F) +
+  facet_wrap(~t) + labs(x = NULL, y = NULL)
+```
+

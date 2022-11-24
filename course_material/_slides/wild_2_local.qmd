@@ -1,0 +1,221 @@
+---
+# title: Local data
+format:
+  revealjs:
+    theme: FACE-IT_pres.scss
+    self-contained: true
+    transition: slide
+editor: source
+scrollable: true
+---
+
+# Local data {background-color="#008980" style="text-align: center"}
+
+*Robert Schlegel*
+
+```{r tidy-3-opts, echo=FALSE}
+knitr::opts_chunk$set(
+  warning = FALSE, 
+  message = FALSE,
+  echo = TRUE
+)
+```
+
+## Problem
+
+-   What are the most common complex file types?
+-   Are there tools to help us with this?
+-   How do we use them?
+
+## Solution
+
+-   We focus on the most common complex file types here
+-   We will look at the packages for the common file types
+-   A few example files are loaded
+
+## Setup
+
+-   We will look at a few packages that help us load common file types.
+-   NB: Some of these packages overwrite functions from others
+-   We deal wit this by calling functions specifically within packages
+  -   e.g. `dplyr::select()`
+
+```{r}
+library(tidyverse) # All-in-one
+
+library(raster) # For working with raster files
+
+library(sf) # For most of our spatial data needs
+
+library(sfheaders) # A bit more help
+
+library(tidync) # For working with NetCDF files
+```
+
+## Rasters
+
+-   Raster files store evenly gridded data
+-   These are generally used to show a value over a surface
+-   Common file types are: `.asc` or `.tif`, but there are others
+
+## Rasters
+
+-   Download and unzip `.asc` file from [Bio-oracle](https://www.bio-oracle.org/downloads-to-email.php) to `course_material/data/`
+
+```{r, eval=FALSE}
+# Load with one function
+temp_mean_2100 <- raster("course_material/data/2100AOGCM.RCP85.Surface.Temperature.Mean.asc.BOv2_1.asc")
+```
+```{r, echo=FALSE}
+temp_mean_2100 <- raster("../data/2100AOGCM.RCP85.Surface.Temperature.Mean.asc.BOv2_1.asc")
+```
+
+## Rasters
+
+-   Single layer raster files can be converted rather easily
+
+```{r}
+# Convert to data.frame
+temp_mean_2100_df <- as.data.frame(temp_mean_2100, xy = T)
+
+# Manually change column names - be careful here
+colnames(temp_mean_2100_df) <- c("lon", "lat", "temp")
+```
+
+## Rasters
+
+-   Then we can use them in **`ggplot2`** as normal
+
+```{r}
+#| output-location: fragment
+
+# Pre-filter raster pixels for faster plotting
+temp_mean_2100_df %>% 
+  filter(between(lon, 90, 160),
+         between(lat, -30, 30)) %>% 
+  ggplot(aes(x = lon, y = lat)) +
+  geom_raster(aes(fill = temp)) +
+  borders() +
+  scale_fill_viridis_c() +
+  coord_quickmap(expand = FALSE,
+                 xlim = c(90, 160), ylim = c(-30, 30))
+```
+
+## Shape files
+
+-   These are files designed to show polygon shapes
+-   They can often be saved in complex file structures with many additional dependent files
+-   The main file extension we usually want is `.shp`
+-   Note that there are many sites that provide these sorts of files
+-   While global products exist, locally created files are usually better
+
+## Shape files
+
+-   Download the [GSHHG](https://www.ngdc.noaa.gov/mgg/shorelines/data/gshhg/latest/) products, create a new folder `GSHHG` in `course_material/data/` and unzip the files there
+-   *NB:* This is a very beefy file
+
+```{r, eval=FALSE}
+# Load shapefile
+coastline_full <- read_sf("course_material/data/GSHHG/GSHHS_shp/f/GSHHS_f_L1.shp")
+
+# Convert to data.frame
+coastline_full_df <- sf_to_df(coastline_full, fill = TRUE)
+```
+```{r, echo=FALSE}
+coastline_full <- read_sf("../data/GSHHG/GSHHS_shp/f/GSHHS_f_L1.shp")
+coastline_full_df <- sf_to_df(coastline_full, fill = TRUE)
+```
+
+## Shape files
+
+-   Once converted they work in **`ggplot2`** as normal
+
+```{r}
+#| output-location: fragment
+
+# Filter to Kongsfjorden and plot
+# NB: filter much wider than necessary to ensure
+# that you get enough of the polygon to avoid issues
+coastline_full_df %>% 
+  filter(between(x, 6, 13),
+         between(y, 78, 80)) %>% 
+  ggplot(aes(x = x, y = y)) +
+  geom_polygon(aes(group = id), 
+               fill = "grey70", colour = "black") +
+  coord_quickmap(expand = FALSE,
+                 xlim = c(11, 12.6), ylim = c(78.88, 79.05))
+```
+
+## NetCDF
+
+-   These files can hold any number of things
+-   Usually it will be large model or satellite datasets
+-   While they can seem scary, this is a very good data storage system, and is not going to go away
+-   Download the most recent day of [NOAA OISST](https://www.ncei.noaa.gov/data/sea-surface-temperature-optimum-interpolation/v2.1/access/avhrr/) data and place in `course_material/data/`
+
+## NetCDF
+
+-   Data are now relatively easy to load directly as **tidy** data thanks to **`tidync`**
+-   But they can still provide complex or unclear data.frames
+
+```{r, eval=FALSE}
+sst_NOAA_recent <- tidync("course_material/data/oisst-avhrr-v02r01.20221121_preliminary.nc") %>% 
+  # Use this to convert to a tibble (i.e. fancy data.frame)
+  hyper_tibble()
+head(sst_NOAA_recent)
+```
+```{r, echo=FALSE}
+sst_NOAA_recent <- tidync("../data/oisst-avhrr-v02r01.20221121_preliminary.nc") %>% 
+  hyper_tibble()
+head(sst_NOAA_recent)
+```
+
+## NetCDF
+
+-   Often we need to investigate a NetCDF file to understand what is inside of it
+
+```{r, eval=FALSE}
+tidync("course_material/data/oisst-avhrr-v02r01.20221121_preliminary.nc")
+```
+```{r, echo=FALSE}
+tidync("../data/oisst-avhrr-v02r01.20221121_preliminary.nc")
+```
+
+## NetCDF
+
+-   Let's look at the full report
+
+```{r, eval=FALSE}
+print(ncdf4::nc_open("course_material/data/oisst-avhrr-v02r01.20221121_preliminary.nc"))
+```
+```{r, echo=FALSE}
+# NB: 'ncdf4' package is installed with `tidync`
+print(ncdf4::nc_open("../data/oisst-avhrr-v02r01.20221121_preliminary.nc"))
+```
+
+## NetCDF
+
+-   We can see that the time column is in units: days since 1978-01-01 12:00:00
+-   With that we can finish tidying our data
+
+```{r}
+sst_NOAA_tidy <- sst_NOAA_recent %>% 
+  mutate(t = as.Date(time, origin = "1978-01-01 12:00:00"),
+         lon = ifelse(lon > 180, lon-360, lon))
+```
+
+## NetCDF
+
+-   And then let's plot it!
+
+```{r}
+#| output-location: fragment
+
+ggplot(sst_NOAA_tidy, aes(x = lon, y = lat)) +
+  geom_tile(aes(fill = anom)) +
+  borders(fill = "grey70", colour = NA) +
+  geom_tile(data = na.omit(sst_NOAA_tidy), fill = "lightskyblue") +
+  scale_fill_gradient2(low = "blue", high = "red") +
+  coord_quickmap(expand = FALSE)
+```
+
